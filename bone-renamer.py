@@ -4,7 +4,7 @@ bl_info = {
     "version": (1, 0),
     "blender": (2, 80, 0),
     "location": "View3D > Sidebar > Edit Tab",
-    "description": "Provides two methods for renaming bones: 'Incremental Rename' which renames the selected bone and its children by incrementing a number in the assigned name, and 'Alphabetical Rename' which renames the selected bones alphabetically. It also includes an option to apply the new name to the root bone in 'Alphabetical Rename'.",
+    "description": "Provides two methods for renaming bones: 'Incremental Rename' which renames the selected bone and its children by incrementing a number in the assigned name, and 'Alphabetical Rename' which renames the selected bones alphabetically. It also includes options to apply the new name to the root bone, to move '_L' or '_R' to the end of names, and to add '_Root' to the end of the root bone's name in 'Alphabetical Rename'.",
     "category": "3D View",
 }
 
@@ -21,6 +21,18 @@ def get_incremented_name(bone_name, increment):
         return bone_name.replace(last_match, new_number, 1)
 
     return bone_name
+
+def move_lr_to_end(name):
+    if name.endswith("_L"):
+        name = name[:-2] + "_L"
+    elif name.endswith("_R"):
+        name = name[:-2] + "_R"
+    elif "_L_" in name:
+        name = name.replace("_L_", "_") + "_L"
+    elif "_R_" in name:
+        name = name.replace("_R_", "_") + "_R"
+    return name
+
 
 def rename_children_bones(self, context):
     obj = bpy.context.edit_object
@@ -50,10 +62,13 @@ def alphabetical_rename(self, context):
             self.report({'ERROR'}, "The input name is empty.")
             return {'CANCELLED'}
 
+        root_bone = None
         if context.scene.include_root_bone:
             root_bone = context.active_bone
             if root_bone:
-                root_bone.name = new_name
+                root_bone.name = new_name + "_Root"
+                if context.scene.move_lr_to_end:
+                    root_bone.name = move_lr_to_end(root_bone.name)
                 selected_bones = [bone for bone in context.selected_bones if bone != root_bone]
             else:
                 self.report({'ERROR'}, "No active bone selected.")
@@ -64,7 +79,10 @@ def alphabetical_rename(self, context):
         selected_bones.sort(key=lambda x: x.name)
         
         for i, bone in enumerate(selected_bones):
-            bone.name = f"{new_name}_{string.ascii_uppercase[i]}_00"
+            bone_name = f"{new_name}_{string.ascii_uppercase[i]}_00"
+            if context.scene.move_lr_to_end and bone != root_bone:
+                bone_name = move_lr_to_end(bone_name)
+            bone.name = bone_name
             for j, child in enumerate(bone.children_recursive):
                 child.name = get_incremented_name(bone.name, j+1)
                 
@@ -94,7 +112,7 @@ class SimpleOperator(bpy.types.Operator):
 class AlphabeticalOperator(bpy.types.Operator):
     bl_idname = "object.alphabetical_rename"
     bl_label = "Alphabetical Rename"
-    bl_description = "Rename the selected bones alphabetically. If 'Include Root Bone' is checked, the new name is also applied to the active bone."
+    bl_description = "Rename the selected bones alphabetically. If 'Include Root Bone' is checked, the new name is also applied to the active bone. If 'Move _L/_R to End' is checked, '_L' or '_R' in the new name is moved to the end."
 
     def execute(self, context):
         return alphabetical_rename(self, context)
@@ -114,6 +132,7 @@ class OBJECT_PT_custom_panel(bpy.types.Panel):
         layout.operator("object.incremental_rename")
         row = layout.row()
         row.prop(context.scene, "include_root_bone")
+        row.prop(context.scene, "move_lr_to_end")
         layout.operator("object.alphabetical_rename")
 
 def register():
@@ -129,6 +148,12 @@ def register():
         default=False
     )
 
+    bpy.types.Scene.move_lr_to_end = bpy.props.BoolProperty(
+        name="Move _L/_R to End",
+        description="Whether to move '_L' or '_R' in the new name to the end in 'Alphabetical Rename'",
+        default=False
+    )
+
     bpy.utils.register_class(GetBoneNameOperator)
     bpy.utils.register_class(SimpleOperator)
     bpy.utils.register_class(AlphabeticalOperator)
@@ -137,6 +162,7 @@ def register():
 def unregister():
     del bpy.types.Scene.new_name_value
     del bpy.types.Scene.include_root_bone
+    del bpy.types.Scene.move_lr_to_end
 
     bpy.utils.unregister_class(GetBoneNameOperator)
     bpy.utils.unregister_class(SimpleOperator)
