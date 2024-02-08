@@ -1,0 +1,2 @@
+# bone-renamer
+blender script
